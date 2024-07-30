@@ -437,17 +437,6 @@ func RunTests(patterns []string, channel, offering, pltfrm, outputDir string, ss
 
 		// If the version is > 3033, we can safely use user-data instead of custom-data for
 		// provisioning the instance on Azure.
-		if !version.LessThan(semver.Version{Major: 3034}) && pltfrm == "azure" {
-			// Using reflection is a bit hacky, but it seems to be the only way to
-			// access the field we want to set.
-			f := reflect.ValueOf(flight).Elem()
-			api := f.FieldByName("Api")
-			opts := api.Elem().FieldByName("Opts")
-			userData := opts.Elem().FieldByName("UseUserData")
-			// At this point, this field can be set.
-			userData.SetBool(true)
-		}
-
 		versionStr = version.String()
 
 		// one more filter pass now that we know real version
@@ -617,6 +606,15 @@ func runTest(h *harness.H, t *register.Test, pltfrm string, flight platform.Flig
 				h.Skipf("Failed to create discovery endpoint: %v", err)
 			}
 			userdata = userdata.Subst("$discovery", url)
+		}
+		if pltfrm == "azure" {
+			f := reflect.ValueOf(flight).Elem()
+			api := f.FieldByName("Api")
+			optsField := api.Elem().FieldByName("Opts")
+			userDataField := optsField.Elem().FieldByName("UseUserData")
+			// Set "UseUserData" on true only if the userdata content
+			// is in Ignition format and not cloud-init
+			userDataField.SetBool(userdata.IsIgnitionCompatible())
 		}
 
 		if _, err := platform.NewMachines(c, userdata, t.ClusterSize); err != nil {
